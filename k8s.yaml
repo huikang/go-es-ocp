@@ -1,0 +1,22 @@
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-es-ocp
+  labels:
+    app: go-es-ocp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: go-es-ocp
+  template:
+    metadata:
+      labels:
+        app: go-es-ocp
+    spec:
+      containers:
+      - name: go-es-ocp
+        image: huikang/go-es-ocp
+        command: ["bash"]
+        args: ["-c", "/usr/local/bin/go-es-ocp"]
