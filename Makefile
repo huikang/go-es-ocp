@@ -5,6 +5,7 @@ export PATH:=$(GOBIN):$(PATH)
 
 IMAGE_TAG?=huikang/go-es-ocp:latest
 OPERATOR_NAMESPACE=openshift-operators-redhat
+ES_CONTAINER_NAME=elasticsearch
 
 all: build
 
@@ -13,6 +14,9 @@ fmt:
 
 build: fmt
 	@go build -o $(GOBIN)/go-es-ocp ./main.go
+
+run-local:
+	@go run ./main.go -es_addr="http://localhost:9200"
 
 image:
 	@if [ $${SKIP_BUILD:-false} = false ] ; then \
@@ -28,3 +32,12 @@ deploy:
 
 undeploy:
 	kubectl -n $(OPERATOR_NAMESPACE) delete -f ./k8s.yaml
+
+run-es:
+	docker run -d --name $(ES_CONTAINER_NAME) \
+		-p 9200:9200 -p 9300:9300 \
+		-e "discovery.type=single-node" \
+		elasticsearch:6.8.12
+
+clean:
+	docker rm -f $(ES_CONTAINER_NAME)
