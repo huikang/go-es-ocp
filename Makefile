@@ -6,6 +6,12 @@ export PATH:=$(GOBIN):$(PATH)
 IMAGE_TAG?=huikang/go-es-ocp:latest
 OPERATOR_NAMESPACE=openshift-operators-redhat
 ES_CONTAINER_NAME=elasticsearch
+ES_OCP_IMAGE_TAG=quay.io/openshift/origin-logging-elasticsearch6
+ES_IMAGE_TAG=elasticsearch:6.8.12
+ES_OD_IMAGE_TAG=amazon/opendistro-for-elasticsearch:0.10.0
+
+ES_ADDR?=http://localhost:9200
+ES_TOKEN?=token
 
 all: build
 
@@ -17,6 +23,9 @@ build: fmt
 
 run-local:
 	@go run ./main.go -es_addr="http://localhost:9200"
+
+run-local-ocp:
+	@go run ./main.go -es_addr=$(ES_ADDR) -t $(ES_TOKEN)
 
 image:
 	@if [ $${SKIP_BUILD:-false} = false ] ; then \
@@ -37,7 +46,30 @@ run-es:
 	docker run -d --name $(ES_CONTAINER_NAME) \
 		-p 9200:9200 -p 9300:9300 \
 		-e "discovery.type=single-node" \
-		elasticsearch:6.8.12
+		$(ES_IMAGE_TAG)
+
+# -v $(PWD)/secret:/etc/elasticsearch/secret 
+run-es-ocp:
+	docker run -d --name $(ES_CONTAINER_NAME) \
+		-v $(PWD)/etc-elasticsearch:/etc/elasticsearch \
+		-v $(PWD)/config:/usr/share/java/elasticsearch/config \
+		-v $(PWD)/persistent:/elasticsearch/persistent \
+		-p 9200:9200 -p 9300:9300 \
+		-e "CLUSTER_NAME=local" \
+		-e "IS_MASTER=true" \
+		-e "DC_NAME=es" \
+		-e "HAS_DATA=true" \
+		-e "HEAP_DUMP_LOCATION=/elasticsearch/persistent/heapdump.hprof" \
+		$(ES_OCP_IMAGE_TAG)
+
+run-es-od:
+	docker run -d --name $(ES_CONTAINER_NAME) \
+		-v $(PWD)/etc-elasticsearch:/etc/elasticsearch \
+		-v $(PWD)/config:/usr/share/java/elasticsearch/config \
+		-v $(PWD)/persistent:/elasticsearch/persistent \
+		-p 9200:9200 -p 9300:9300 \
+		-e "discovery.type=single-node" \
+		$(ES_OD_IMAGE_TAG)
 
 clean:
 	docker rm -f $(ES_CONTAINER_NAME)
