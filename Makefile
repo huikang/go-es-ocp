@@ -22,10 +22,11 @@ build: fmt
 	@go build -o $(GOBIN)/go-es-ocp ./main.go
 
 run-local:
-	@go run ./main.go -es_addr="http://localhost:9200"
+	@go run ./main.go -es_addr=$(ES_ADDR)
 
 run-local-ocp:
-	@go run ./main.go -es_addr=$(ES_ADDR) -t $(ES_TOKEN)
+	@go run ./main.go -es_addr=$(ES_ADDR) -t $(ES_TOKEN) \
+		-r ./admin-ca -c ./admin-cert -k ./admin-key
 
 image:
 	@if [ $${SKIP_BUILD:-false} = false ] ; then \
