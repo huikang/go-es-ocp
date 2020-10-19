@@ -19,7 +19,7 @@ the cluster.
 
 ## Deploy and run against the elasticsearch in OCP
 
-0. Install the CLO operator and ES operator, and create an CLO instance.
+0. Install the CLO operator and ES operator, and create a CLO instance.
 
 1. Expose the log store
 
@@ -37,5 +37,6 @@ the cluster.
 2. Run test program:
 
 ```bash
-    ES_ADDR=https://${routeES}:443 TOKEN=<sa token> make run-local-ocp
+    token=<SA token from the es operator, `/var/run/secrets/kubernetes.io/serviceaccount/token`>
+    ES_ADDR=https://${routeES}:443 ES_TOKEN=${token} make run-local-ocp
 ```
