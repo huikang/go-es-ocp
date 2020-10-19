@@ -64,10 +64,9 @@ func ocpEsClient(esAddr, token, caPath, certPath, keyPath string) (*elasticsearc
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
 			RootCAs:            getRootCA(),
-			//Certificates:       getClientCertificates(),
+			Certificates:       getClientCertificates(),
 		},
 	}
-	log.Printf("%v", httpTranport)
 
 	header := http.Header{}
 	header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
@@ -128,7 +127,7 @@ func main() {
 		log.Fatalf("Error getting the info response: %s\n", err)
 	}
 	defer res.Body.Close()
-	log.Print(es.Transport.(*estransport.Client).URLs())
+	log.Printf("es URLs: %v\n", es.Transport.(*estransport.Client).URLs())
 
 	// Get cluster version
 	res, err = es.Cluster.Stats(es.Cluster.Stats.WithPretty())
