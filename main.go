@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"path"
+	"strings"
 	"time"
 
 	elasticsearch6 "github.com/elastic/go-elasticsearch/v6"
@@ -47,7 +48,43 @@ func getClientCertificates() []tls.Certificate {
 	}
 }
 
-func ocpEsClient(esAddr, token, caPath, certPath, keyPath string) (*elasticsearch6.Client, error) {
+func oauthEsClient(esAddr, token, caPath, certPath, keyPath string) (*elasticsearch6.Client, error) {
+	es := &elasticsearch6.Client{}
+	httpTranport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+			DualStack: true,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+			RootCAs:            getRootCA(),
+			// Certificates:       getClientCertificates(),
+		},
+	}
+
+	header := http.Header{}
+	header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+
+	cfg := elasticsearch6.Config{
+		Header:    header,
+		Addresses: []string{esAddr},
+		Transport: httpTranport,
+	}
+	es, err := elasticsearch6.NewClient(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("Error creating the client: %v", err)
+	}
+	return es, nil
+}
+
+func mTlsEsClient(esAddr, caPath, certPath, keyPath string) (*elasticsearch6.Client, error) {
 	es := &elasticsearch6.Client{}
 	httpTranport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
@@ -68,17 +105,13 @@ func ocpEsClient(esAddr, token, caPath, certPath, keyPath string) (*elasticsearc
 		},
 	}
 
-	header := http.Header{}
-	header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-
 	cfg := elasticsearch6.Config{
-		Header:    header,
 		Addresses: []string{esAddr},
 		Transport: httpTranport,
 	}
 	es, err := elasticsearch6.NewClient(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("Error creating the client: %v", err)
+		return nil, fmt.Errorf("Error creating the mtls client: %v", err)
 	}
 	return es, nil
 }
@@ -104,39 +137,72 @@ func main() {
 	log.Printf("es address: %s\n", *esAddr)
 
 	// Setup es client
-	var es *elasticsearch6.Client
-	var err error
+	var esClis []*elasticsearch6.Client
 	if *esToken == "" {
-		es, err = elasticsearch6.NewClient(elasticsearch6.Config{
+		es, err := elasticsearch6.NewClient(elasticsearch6.Config{
 			Addresses: []string{*esAddr},
 		})
 		if err != nil {
 			log.Fatalf("Error creating the client: %s\n", err)
 		}
+		esClis = append(esClis, es)
 	} else {
 		log.Printf("Creating OCP es client, token %s", *esToken)
-		es, err = ocpEsClient(*esAddr, *esToken, *caPath, *certPath, *keyPath)
+		es, err := oauthEsClient(*esAddr, *esToken, *caPath, *certPath, *keyPath)
 		if err != nil {
 			log.Fatalf("Error creating the OCP client: %s\n", err)
 		}
+		esClis = append(esClis, es)
+
+		es, err = mTlsEsClient(*esAddr, *caPath, *certPath, *keyPath)
+		if err != nil {
+			log.Fatalf("Error creating the OCP client: %s\n", err)
+		}
+		esClis = append(esClis, es)
 	}
 
 	// Get es client info
-	res, err := es.Info()
-	if err != nil {
-		log.Fatalf("Error getting the info response: %s\n", err)
-	}
-	defer res.Body.Close()
-	log.Printf("es URLs: %v\n", es.Transport.(*estransport.Client).URLs())
+	for _, es := range esClis {
+		res, err := es.Info()
+		if err != nil {
+			log.Fatalf("Error getting the info response: %s\n", err)
+		}
+		defer res.Body.Close()
+		log.Printf("es URLs: %v\n", es.Transport.(*estransport.Client).URLs())
 
-	// Get cluster version
-	res, err = es.Cluster.Stats(es.Cluster.Stats.WithPretty())
-	if err != nil {
-		log.Fatalf("Error getting the cluster response: %s\n", err)
+		// Get cluster version
+		res, err = es.Cluster.Stats(es.Cluster.Stats.WithPretty())
+		if err != nil {
+			log.Fatalf("Error getting the cluster response: %s\n", err)
+		}
+		defer res.Body.Close()
+		if res.IsError() {
+			log.Printf("ERROR: %s: %s", res.Status(), res)
+		} else {
+			body, _ := ioutil.ReadAll(res.Body)
+			str := string(body)
+			version := gjson.Get(str, "nodes.versions")
+			log.Println(version)
+		}
+
+		// create index
+		res, err = es.Index(
+			"test",                                  // Index name
+			strings.NewReader(`{"title" : "Test"}`), // Document body
+			es.Index.WithDocumentID("1"),            // Document ID
+			es.Index.WithRefresh("true"),            // Refresh
+		)
+		if err != nil {
+			log.Printf("ERROR: %s: %s", res.Status(), res)
+		}
+		defer res.Body.Close()
+
+		if res.IsError() {
+			log.Printf("ERROR: %s: %s", res.Status(), res)
+		} else {
+			body, _ := ioutil.ReadAll(res.Body)
+			str := string(body)
+			log.Println(str)
+		}
 	}
-	defer res.Body.Close()
-	body, err := ioutil.ReadAll(res.Body)
-	str := string(body)
-	version := gjson.Get(str, "nodes.versions")
-	log.Println(version)
 }
