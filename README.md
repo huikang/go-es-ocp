@@ -29,15 +29,21 @@ the cluster.
 ```bash
     ./expose-log-store.sh
 
-    # Verify access:
     token=$(oc whoami -t)
-    routeES=`oc get route elasticsearch -o jsonpath={.spec.host}`
+    # Expose the elasticsearch through port forwarding:
+    oc -n openshift-logging port-forward service/elasticsearch 9200:9200
+```
+
+To verify the connection, open another terminal
+```
+    routeES=localhost:9200
     curl -tlsv1.2 --insecure -H "Authorization: Bearer ${token}" "https://${routeES}/.operations.*/_search?size=1" | jq
 ```
 
 2. Run test program:
 
 ```bash
+    routeES=localhost:9200
     token=<SA token from the es operator, `/var/run/secrets/kubernetes.io/serviceaccount/token`>
-    ES_ADDR=https://${routeES}:443 ES_TOKEN=${token} make run-local-ocp
+    ES_ADDR=https://${routeES} ES_TOKEN=${token} make run-local-ocp
 ```
